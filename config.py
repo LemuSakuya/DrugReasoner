@@ -11,7 +11,7 @@ class Config:
     # 数据库配置
     DB_HOST = os.getenv('DB_HOST', 'localhost')
     DB_USER = os.getenv('DB_USER', 'root')
-    DB_PASSWORD = os.getenv('DB_PASSWORD', '12345')
+    DB_PASSWORD = os.getenv('DB_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', '12345'))
     DB_NAME = os.getenv('DB_NAME', 'drug_discovery')
     DB_PORT = int(os.getenv('DB_PORT', 3306))
     DB_CHARSET = 'utf8mb4'
@@ -94,13 +94,7 @@ class Config:
     PIC_DIR = os.path.join(BASE_DIR, 'pic')
     CASE_DIR = os.path.join(BASE_DIR, 'Case')
 
-    # 兼容现有文件布局的常用文件路径
     LEGACY_CASE_DIR = CASE_DIR
-    LEGACY_EGFR_CASE_DIR = os.path.join(BASE_DIR, 'EGFR-Case')
-    LEGACY_KIBA_DIR = os.path.join(BASE_DIR, 'kiba')
-    LEGACY_DAVIS_PROTS = os.path.join(BASE_DIR, 'davis_prots.csv')
-    LEGACY_SQL_DUMP = os.path.join(DATA_DIR, 'drug_discovery_dump.sql')
-    
     # 软件信息
     SOFTWARE_NAME = '基于有向符号图与LLM的药物数据分析系统'
     

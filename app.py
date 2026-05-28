@@ -91,6 +91,7 @@ def _ensure_rdkit() -> bool:
         return False
 
 import data_extractor
+import search_agent
 
 warnings.filterwarnings('ignore', category=UserWarning, module='pandas') #去除推荐SQLAlchemy警告
 warnings.filterwarnings('ignore', category=FutureWarning, module='torch') #去除torch版本警告
@@ -393,6 +394,18 @@ def datareader(table):
     return pd.read_sql(sql, conn).values
 
 
+# Lazy SearchAgent: do not create at import time.
+_search_agent = None
+
+
+def get_search_agent():
+    global _search_agent
+    if _search_agent is not None:
+        return _search_agent
+    _search_agent = search_agent.SearchAgent(datareader=datareader)
+    return _search_agent
+
+
 #########设置中文字体，解决乱码问题###########
 def setup_chinese_font():
     """设置中文字体为微软雅黑"""
@@ -465,8 +478,10 @@ class RoundedButton(tkinter.Canvas):
         text_font = tkfont.Font(font=self._font)
         text_width = text_font.measure(self._text)
         text_height = text_font.metrics('linespace')
+        # 用中文字宽估算（中文约 2x 拉丁字符宽）
+        char_width = text_font.measure('中')
         if width is not None:
-            desired_width = int(width) * 9 + self._padx * 2
+            desired_width = int(width) * char_width + self._padx * 2
         else:
             desired_width = text_width + self._padx * 2
         if height is not None:
@@ -490,12 +505,19 @@ class RoundedButton(tkinter.Canvas):
         self.bind('<Leave>', self._on_leave)
         self.bind('<Button-1>', self._on_click)
         self.bind('<Configure>', self._on_resize)
-        self._draw()
+        # 延迟绘制：等 widget 被 pack/place 映射后再画，否则 winfo_width 返回 1
+        self.after(1, self._draw)
 
     def _draw(self):
         self.delete('all')
-        w = max(1, self.winfo_width())
-        h = max(1, self.winfo_height())
+        w = self.winfo_width()
+        h = self.winfo_height()
+        if w <= 1:
+            w = self.winfo_reqwidth()
+        if h <= 1:
+            h = self.winfo_reqheight()
+        w = max(1, w)
+        h = max(1, h)
         self._shape_ids = _create_rounded_rect(
             self, 1, 1, w - 1, h - 1, self._radius,
             fill=self._bg, outline=self._bg
@@ -546,6 +568,9 @@ class RoundedButton(tkinter.Canvas):
         state = kwargs.pop('state', None)
         if state is not None:
             self.set_state(state != tkinter.DISABLED)
+        command = kwargs.pop('command', None)
+        if command is not None:
+            self._command = command
         return super().config(**kwargs)
 
     configure = config
@@ -696,12 +721,12 @@ def _exit_app():
 
 
 def _get_llm_config():
-    base_url = os.getenv('LLM_BASE_URL', 'https://api.openai.com').strip()
-    api_key = os.getenv('LLM_API_KEY', '').strip()
-    model = os.getenv('LLM_MODEL', 'gpt-3.5-turbo').strip()
+    base_url = os.getenv('LLM_BASE_URL', 'https://api.deepseek.com').strip()
+    api_key = os.getenv('LLM_API_KEY', os.getenv('DEEPSEEK_API_KEY', '')).strip()
+    model = os.getenv('LLM_MODEL', 'deepseek-v4-pro').strip()
     if base_url.endswith('/'):
         base_url = base_url[:-1]
-    if not base_url.endswith('/v1'):
+    if 'api.deepseek.com' not in base_url and not base_url.endswith('/v1'):
         base_url = base_url + '/v1'
     return base_url, api_key, model
 
@@ -716,6 +741,8 @@ def _get_provider_key_state():
         return provider_model, os.getenv('GROQ_API_KEY', '').strip()
     if provider_model.startswith('anthropic:'):
         return provider_model, os.getenv('ANTHROPIC_API_KEY', '').strip()
+    if provider_model.startswith('deepseek:'):
+        return provider_model, os.getenv('DEEPSEEK_API_KEY', os.getenv('LLM_API_KEY', '')).strip()
     return provider_model, os.getenv('LLM_PROVIDER_API_KEY', '').strip()
 
 
@@ -728,6 +755,13 @@ def _post_chat_completion(base_url, api_key, model, messages):
         'messages': messages,
         'temperature': 0.6
     }
+    if model.startswith('deepseek-v4'):
+        thinking = os.getenv('LLM_THINKING', '').strip().lower()
+        reasoning_effort = os.getenv('LLM_REASONING_EFFORT', '').strip()
+        if thinking in {'enabled', 'disabled'}:
+            payload['thinking'] = {'type': thinking}
+        if reasoning_effort:
+            payload['reasoning_effort'] = reasoning_effort
     data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
     req = urllib.request.Request(url, data=data, method='POST')
     req.add_header('Content-Type', 'application/json')
@@ -811,12 +845,21 @@ def _get_drug_info_local(drug_name):
 
 
 def _handle_local_request(query):
-    keywords = ['药物性质', '药物信息', '副作用', '化学特征', 'SMILES']
+    keywords = ['药物性质', '药物信息', '副作用', '化学特征', 'SMILES',
+                '药物', '蛋白', '靶标', '相互作用', '亲和力', '搜索', '查找', '查询',
+                '关系', '预测', '结合']
     if any(k in query for k in keywords):
         name = _extract_drug_name(query)
-        if not name:
-            return "请提供要查询的药物名称，例如：查找Calcium carbonate的药物性质"
-        return _get_drug_info_local(name)
+        if name and name in _get_drug_name_candidates():
+            return _get_drug_info_local(name)
+        # Fallback to search agent for broader queries
+        try:
+            agent = get_search_agent()
+            response = agent.search(query)
+            if response.results:
+                return response.summary
+        except Exception:
+            pass
     return None
 
 
@@ -833,7 +876,33 @@ PROJECT_TOOL_REGISTRY = {
     "open_drug_drug_analysis": None,
     "open_dta_predict": None,
     "open_relation_graph": None,
+    # Search agent tools — registered lazily via _search_project_tool
+    "search": None,
+    "search_drug": None,
+    "search_protein": None,
+    "search_interaction": None,
 }
+
+
+def _search_project_tool(action: str, payload: str) -> str:
+    agent = get_search_agent()
+    if action == "search":
+        return agent.search(payload).summary
+    elif action == "search_drug":
+        drugs = agent.search_drug(payload, include_side_effects=True, include_features=True)
+        return agent._format_drug_summary(drugs)
+    elif action == "search_protein":
+        prots = agent.search_protein(payload)
+        return agent._format_protein_summary(prots)
+    elif action == "search_interaction":
+        parts = [p.strip() for p in re.split(r'[,，\s|;；]+', payload) if p.strip()]
+        if len(parts) < 2:
+            return "需要两个实体名称，例如：阿司匹林, 布洛芬"
+        result = agent.search_interaction(parts[0], parts[1])
+        if result:
+            return f"{result.entity1} ↔ {result.entity2} ({result.interaction_type}): {result.result}"
+        return f"未找到 {parts[0]} 与 {parts[1]} 之间的已知相互作用。"
+    return f"不支持的搜索 action：{action}"
 
 
 @tool
@@ -844,6 +913,14 @@ def project_action(action: str, payload: str = "") -> str:
     payload: 对应功能的输入（例如药物名称）
     """
     func = PROJECT_TOOL_REGISTRY.get(action)
+    if func is None and action.startswith("search"):
+        # Lazy-dispatch search agent actions
+        if not payload:
+            return f"缺少 payload，请提供 action={action} 的输入参数。"
+        try:
+            return _search_project_tool(action, payload)
+        except Exception as exc:
+            return f"搜索失败：{exc}"
     if not func:
         return f"不支持的 action：{action}"
     if not payload:
@@ -934,7 +1011,7 @@ PROJECT_TOOL_REGISTRY["open_relation_graph"] = _open_relation_graph
 def _build_llm():
     """构建LangChain模型，优先使用init_chat_model，其次回退到HTTP LLM"""
     provider_model = os.getenv('LLM_PROVIDER_MODEL', '').strip()
-    if provider_model:
+    if provider_model and ':' in provider_model:
         try:
             from langchain.chat_models import init_chat_model
             return init_chat_model(provider_model)
@@ -1142,7 +1219,13 @@ def open_agent_window(parent):
         '以及给出可执行的下一步。对药物性质/药物信息/副作用/化学特征等问题，'
         '优先结合本地数据库信息回答。你可以在需要时调用工具：'
         'project_action(action, payload)，目前支持 action='
-        'drug_info、open_drug_detail、open_drug_drug_analysis、open_dta_predict、open_relation_graph。'
+        'drug_info、open_drug_detail、open_drug_drug_analysis、open_dta_predict、open_relation_graph、'
+        'search（统一搜索）、search_drug（药物搜索）、search_protein（蛋白质搜索）、search_interaction（相互作用搜索）。'
+        '\n搜索工具说明：'
+        '\n- search: 支持自然语言查询，如"查找头痛相关的药物"、"阿司匹林和布洛芬的相互作用"'
+        '\n- search_drug: 按药物名/副作用/化学特征搜索药物'
+        '\n- search_protein: 按蛋白名/基因名/别名搜索蛋白质'
+        '\n- search_interaction: 查询两个实体（药物/蛋白）间的 DDI/DTA/PPI 相互作用'
     )
     messages = [{'role': 'system', 'content': system_prompt}]
 
@@ -3495,16 +3578,6 @@ def Mouse_over_start(event, canvas_drug, r11, r12, t1, r21, r22, t2):  # 关联�
         canvas_drug.configure(cursor='arrow')  # 恢复默认
 
 
-start = Tk()  # 创建Tk控件
-start.geometry(Config.START_WINDOW_SIZE)  # 设置窗口大小及位置
-start.title(software_name)  # 设置窗口标题
-start.protocol('WM_DELETE_WINDOW', _exit_app)
-
-canvas_start = Canvas(start, highlightthickness=0)  # 创建Canvas控件，并设置边框厚度为0
-canvas_start.place(width=1000, height=670)  # 设置Canvas控件大小及位置
-bg = PhotoImage(file='./pic/开始2.png')  # 导入背景图
-canvas_start.create_image(496, 328, image=bg)  # 添加背景图片
-
 # 视觉风格
 START_BTN_FILL = '#A5B4FC'
 START_BTN_OUTLINE = '#E0E7FF'
@@ -3518,6 +3591,7 @@ START_BTN_TEXT_HOVER = '#FFFFFF'
 _start_hover = {'main': False, 'help': False}
 _start_anim_id = {'main': None, 'help': None}
 _start_anim_idx = {'main': 0, 'help': 0}
+start = None
 
 def create_title_with_shadow(canvas, x, y, text, font):
     canvas.create_text(x + 2, y + 2, text=text, fill=START_TITLE_SHADOW, font=font)
@@ -3546,23 +3620,41 @@ def animate_start_button(canvas, rect1, rect2, text_id, key):
         canvas.itemconfigure(item, fill=color, outline=START_BTN_OUTLINE_HOVER)
     canvas.itemconfigure(text_id, fill=START_BTN_TEXT_HOVER)
 
-lb_title1 = create_title_with_shadow(canvas_start, 730, 220, '基于有向符号图的', ('微软雅黑', 30, 'bold'))
-lb_title2 = create_title_with_shadow(canvas_start, 730, 270, '药物数据分析系统', ('微软雅黑', 30, 'bold'))
-# lb_title3=canvas_start.create_text(780, 210, text= '', fill='black', font=('华文新魏', 32, 'bold'))
 
-canvas_start.bind('<Button-1>', lambda event: Mouse_Click_start(event))  # 关联鼠标点击事件
-canvas_start.bind('<Motion>', lambda event: Mouse_over_start(event, canvas_start, start_rectangle_1, start_rectangle_2,
-                                                            start_label_text,
-                                                            start_help_rectangle_1, start_help_rectangle_2,
-                                                            start_help_label_text))  # 关联鼠标经过事件
+def main():
+    """启动 Tkinter 入口窗口。"""
+    global start
 
-start_x, start_y, start_l, start_h, start_r = 585, 350, 260, 56, 6
-start_help_x, start_help_y, start_help_l, start_help_h, start_help_r = 585, 420, 260, 56, 6
-start_rectangle_1, start_rectangle_2, start_label_text = create_start_button(
-    canvas_start, start_x, start_y, start_l, start_h, start_r, '点击进入应用'
-)
-start_help_rectangle_1, start_help_rectangle_2, start_help_label_text = create_start_button(
-    canvas_start, start_help_x, start_help_y, start_help_l, start_help_h, start_help_r, '点击阅读帮助'
-)
+    start = Tk()  # 创建Tk控件
+    start.geometry(Config.START_WINDOW_SIZE)  # 设置窗口大小及位置
+    start.title(software_name)  # 设置窗口标题
+    start.protocol('WM_DELETE_WINDOW', _exit_app)
 
-start.mainloop()
+    canvas_start = Canvas(start, highlightthickness=0)  # 创建Canvas控件，并设置边框厚度为0
+    canvas_start.place(width=1000, height=670)  # 设置Canvas控件大小及位置
+    bg = PhotoImage(file='./pic/开始2.png')  # 导入背景图
+    canvas_start.create_image(496, 328, image=bg)  # 添加背景图片
+
+    create_title_with_shadow(canvas_start, 730, 220, '基于有向符号图的', ('微软雅黑', 30, 'bold'))
+    create_title_with_shadow(canvas_start, 730, 270, '药物数据分析系统', ('微软雅黑', 30, 'bold'))
+
+    start_x, start_y, start_l, start_h, start_r = 585, 350, 260, 56, 6
+    start_help_x, start_help_y, start_help_l, start_help_h, start_help_r = 585, 420, 260, 56, 6
+    start_rectangle_1, start_rectangle_2, start_label_text = create_start_button(
+        canvas_start, start_x, start_y, start_l, start_h, start_r, '点击进入应用'
+    )
+    start_help_rectangle_1, start_help_rectangle_2, start_help_label_text = create_start_button(
+        canvas_start, start_help_x, start_help_y, start_help_l, start_help_h, start_help_r, '点击阅读帮助'
+    )
+
+    canvas_start.bind('<Button-1>', lambda event: Mouse_Click_start(event))  # 关联鼠标点击事件
+    canvas_start.bind('<Motion>', lambda event: Mouse_over_start(event, canvas_start, start_rectangle_1, start_rectangle_2,
+                                                                start_label_text,
+                                                                start_help_rectangle_1, start_help_rectangle_2,
+                                                                start_help_label_text))  # 关联鼠标经过事件
+
+    start.mainloop()
+
+
+if __name__ == '__main__':
+    main()

@@ -1,7 +1,7 @@
 # DeepBindDTA
 
 <p align="right">
-  <a href="README.md"><b>English</b></a> | <a href="README.zh.md">中文</a>
+  <a href="README.en.md"><b>English</b></a> | <a href="README.zh.md">中文</a>
 </p>
 
 ## 📌 Project Overview
@@ -35,7 +35,7 @@
 
 | File | Description |
 |------|-------------|
-| `app.py` | Main GUI application (~2000 lines, Tkinter) |
+| `app.py` | Main GUI application (Tkinter) |
 | `llmdta.py` | LLMDTA neural network model |
 | `attention_blocks.py` | Bilinear attention & Transformer blocks |
 | `dataset.py` | PyTorch Dataset and DataLoader |
@@ -44,7 +44,8 @@
 | `data_extractor.py` | Drug/protein data extraction utilities |
 | `config.py` | Global configuration (paths, DB, GUI) |
 | `pred.py` | Standalone batch prediction script |
-| `deploy.ps1` | **One-click deployment script** |
+| `setup.ps1` | **One-click environment setup and launcher** |
+| `.env.example` | Local database and LLM environment template |
 
 ---
 
@@ -57,75 +58,62 @@
 - Docker Desktop (for MySQL) — [download](https://www.docker.com/products/docker-desktop/)
 - Git LFS — `git lfs install`
 
-### Option A — One-click Deploy (Recommended)
+### Option A — One-click Setup (Recommended)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\deploy.ps1
+.\setup.ps1
 ```
 
-This will automatically:
-1. Create/repair the Python virtual environment
-2. Start MySQL via Docker
-3. Ask whether to import the SQL database dump
-4. Launch the GUI
+This will automatically detect Python, create or repair `.venv`, install dependencies, start MySQL, configure the optional LLM assistant, and launch the GUI.
 
-Other deploy modes:
+To persist local passwords or LLM keys, copy the environment template first:
 
 ```powershell
-# Already have external MySQL, skip Docker
-.\deploy.ps1 -SkipDocker
-
-# Force import SQL data (first time)
-.\deploy.ps1 -ImportSQL
-
-# Run prediction script only (no GUI)
-.\deploy.ps1 -PredOnly
+Copy-Item .env.example .env
+notepad .env
 ```
 
-### Option B — Manual Setup
+For DeepSeek, use the OpenAI-compatible direct API mode:
 
-**Step 1: Create virtual environment**
+```env
+LLM_API_KEY=your DeepSeek API key
+DEEPSEEK_API_KEY=your DeepSeek API key
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-v4-pro
+LLM_THINKING=disabled
+```
+
+Common modes:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup_py39.ps1
+.\setup.ps1 -SkipDocker    # Use an external MySQL instance
+.\setup.ps1 -InitDB        # Import SQL data on first setup
+.\setup.ps1 -PredOnly      # Run batch prediction only
+.\setup.ps1 -SetupOnly     # Prepare the environment without launching
 ```
 
 To use a specific Python interpreter:
 
 ```powershell
-$env:VENV_PYTHON = "C:\Path\To\python.exe"
-powershell -ExecutionPolicy Bypass -File .\scripts\setup_py39.ps1
+$env:DEEPBIND_PYTHON = "C:\Path\To\python.exe"
+.\setup.ps1
 ```
 
-**Step 2: Start MySQL via Docker**
+### Option B — Manual Setup
 
 ```powershell
+# 1. Create a virtual environment and install dependencies
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# 2. Start MySQL
 docker compose up -d
-```
 
-Custom credentials (optional):
+# 3. Import the database on first setup
 
-```powershell
-$env:MYSQL_ROOT_PASSWORD = "yourpassword"
-$env:MYSQL_DATABASE      = "drug_discovery"
-$env:MYSQL_PORT          = "3306"
-docker compose up -d
-```
-
-**Step 3: Import database dump** (optional, large file)
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\db_import_docker.ps1
-```
-
-**Step 4: Run**
-
-```powershell
-# Launch GUI
-powershell -ExecutionPolicy Bypass -File .\run.ps1
-
-# Run batch prediction
-powershell -ExecutionPolicy Bypass -File .\run.ps1 pred
+# 4. Launch the GUI
+.venv\Scripts\python.exe app.py
 ```
 
 ### Database Environment Variables
@@ -138,11 +126,13 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1 pred
 | `DB_PASSWORD` | `12345` | MySQL password |
 | `DB_NAME` | `drug_discovery` | Database name |
 
+> Recommendation: set your own `MYSQL_ROOT_PASSWORD` / `DB_PASSWORD` in `.env` for local development, and never commit real secrets.
+
 ---
 
 ## 🔧 Git LFS
 
-This repository uses **Git LFS** for large binary files (`*.pth`, `*.pkl`, `*.pt`, `*.h5`, `*.ckpt`, `*.onnx`, SQL dumps).
+This repository uses **Git LFS** for large files (`*.pth`, `*.pkl`, `*.pt`, `*.h5`, `*.ckpt`, `*.onnx`, `*.sql`).
 
 ```bash
 # After cloning, fetch all LFS objects

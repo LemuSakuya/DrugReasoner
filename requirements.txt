@@ -34,5 +34,5 @@ tqdm>=4.62.0
 joblib>=1.1.0
 
 # LLM / Agent
-langchain>=0.2.0
+langchain>=1.0,<2
 

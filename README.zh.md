@@ -1,7 +1,7 @@
 # DeepBindDTA
 
 <p align="right">
-  <a href="README.md">English</a> | <a href="README.zh.md"><b>中文</b></a>
+  <a href="README.en.md">English</a> | <a href="README.zh.md"><b>中文</b></a>
 </p>
 
 ## 📌 项目简介
@@ -34,7 +34,7 @@
 
 | 文件 | 说明 |
 |------|------|
-| `app.py` | GUI 主程序（~2000 行，Tkinter） |
+| `app.py` | GUI 主程序（Tkinter） |
 | `llmdta.py` | LLMDTA 神经网络模型定义 |
 | `attention_blocks.py` | 双线性注意力 & Transformer 模块 |
 | `dataset.py` | PyTorch 数据集与数据加载器 |
@@ -43,7 +43,8 @@
 | `data_extractor.py` | 药物/蛋白质数据提取工具 |
 | `config.py` | 全局配置（路径、数据库、GUI） |
 | `pred.py` | 独立批量预测脚本 |
-| `deploy.ps1` | **一键部署脚本** |
+| `setup.ps1` | **一键环境配置与启动脚本** |
+| `.env.example` | 本地数据库与 LLM 环境变量模板 |
 
 ---
 
@@ -52,79 +53,67 @@
 ### 环境要求
 
 - Windows 10/11
-- Python 3.9（[下载地址](https://www.python.org/downloads/release/python-3913/)）
+- Python 3.9+（[下载地址](https://www.python.org/downloads/)）
 - Docker Desktop（用于 MySQL）— [下载地址](https://www.docker.com/products/docker-desktop/)
 - Git LFS — `git lfs install`
 
-### 方式一：一键部署（推荐）
+### 一键部署（推荐）
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\deploy.ps1
+.\setup.ps1
 ```
 
-该脚本将自动完成：
-1. 创建/修复 Python 虚拟环境并安装依赖
-2. 通过 Docker 启动 MySQL 容器
-3. 询问是否导入 SQL 数据库
-4. 启动 GUI 主程序
+脚本自动完成：检测 Python → 创建虚拟环境 → 安装依赖 → 启动 MySQL → 配置 LLM → 启动 GUI。
 
-其他部署模式：
+如需保存本地密码或 LLM Key，可先复制环境模板：
 
 ```powershell
-# 已有外部 MySQL，跳过 Docker
-.\deploy.ps1 -SkipDocker
-
-# 强制导入 SQL 数据（首次部署）
-.\deploy.ps1 -ImportSQL
-
-# 仅运行预测脚本，不启动 GUI
-.\deploy.ps1 -PredOnly
+Copy-Item .env.example .env
+notepad .env
 ```
 
-### 方式二：手动部署
+DeepSeek 用户推荐使用 OpenAI-compatible 直连配置：
 
-**第一步：创建虚拟环境**
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup_py39.ps1
+```env
+LLM_API_KEY=你的 DeepSeek API Key
+DEEPSEEK_API_KEY=你的 DeepSeek API Key
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-v4-pro
+LLM_THINKING=disabled
 ```
 
-指定 Python 路径（可选）：
+**常用参数：**
 
 ```powershell
-$env:VENV_PYTHON = "C:\Path\To\python.exe"
-powershell -ExecutionPolicy Bypass -File .\scripts\setup_py39.ps1
+.\setup.ps1 -SkipDocker    # 已有外部 MySQL，跳过 Docker
+.\setup.ps1 -InitDB        # 首次部署，导入 SQL 数据
+.\setup.ps1 -PredOnly      # 仅运行预测，不启动 GUI
+.\setup.ps1 -SetupOnly     # 仅配置环境，不启动应用
 ```
 
-**第二步：通过 Docker 启动 MySQL**
+**指定 Python 路径：**
 
 ```powershell
+$env:DEEPBIND_PYTHON = "C:\Path\To\python.exe"
+.\setup.ps1
+```
+
+### 手动部署
+
+```powershell
+# 1. 创建虚拟环境并安装依赖
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# 2. 启动 MySQL
 docker compose up -d
-```
 
-自定义数据库配置（可选）：
+# 3. 导入数据库（首次需要）
+.\setup.ps1 -InitDB
 
-```powershell
-$env:MYSQL_ROOT_PASSWORD = "yourpassword"
-$env:MYSQL_DATABASE      = "drug_discovery"
-$env:MYSQL_PORT          = "3306"
-docker compose up -d
-```
-
-**第三步：导入数据库**（可选，文件较大）
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\db_import_docker.ps1
-```
-
-**第四步：运行程序**
-
-```powershell
-# 启动 GUI
-powershell -ExecutionPolicy Bypass -File .\run.ps1
-
-# 运行批量预测
-powershell -ExecutionPolicy Bypass -File .\run.ps1 pred
+# 4. 启动
+.venv\Scripts\python.exe app.py
 ```
 
 ### 数据库环境变量
@@ -137,11 +126,13 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1 pred
 | `DB_PASSWORD` | `12345` | MySQL 密码 |
 | `DB_NAME` | `drug_discovery` | 数据库名称 |
 
+> 建议：本地开发请在 `.env` 中设置自己的 `MYSQL_ROOT_PASSWORD` / `DB_PASSWORD`，不要把真实密钥提交到仓库。
+
 ---
 
 ## 🔧 Git LFS 说明
 
-本仓库使用 **Git LFS** 管理大型文件（`*.pth`, `*.pkl`, `*.pt`, `*.h5`, `*.ckpt`, `*.onnx` 及 SQL 转储文件）。
+本仓库使用 **Git LFS** 管理大型文件（`*.pth`, `*.pkl`, `*.pt`, `*.h5`, `*.ckpt`, `*.onnx`, `*.sql`）。
 
 ```bash
 # 克隆后拉取所有 LFS 对象

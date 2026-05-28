@@ -1,5 +1,6 @@
 database/test.sql filter=lfs diff=lfs merge=lfs -text
 database/test_fixed.sql filter=lfs diff=lfs merge=lfs -text
+*.sql filter=lfs diff=lfs merge=lfs -text
 model_300dim.pkl filter=lfs diff=lfs merge=lfs -text
 *.ckpt filter=lfs diff=lfs merge=lfs -text
 *.onnx filter=lfs diff=lfs merge=lfs -text
