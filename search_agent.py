@@ -1,5 +1,5 @@
 """
-Search Agent for DeepBindDTA
+Search Agent for DrugReasoner
 =============================
 Unified search module supporting drug, protein, and interaction search
 with fuzzy matching, alias resolution, and natural language query parsing.

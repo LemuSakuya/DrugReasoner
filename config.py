@@ -88,6 +88,7 @@ class Config:
     EXPORTS_CSV_DIR = os.path.join(EXPORTS_DATA_DIR, 'csv')
     EXPORTS_JSON_DIR = os.path.join(EXPORTS_DATA_DIR, 'json')
     EXPORTS_LOGS_DIR = os.path.join(EXPORTS_DATA_DIR, 'logs')
+    REPORTS_DIR = os.path.join(BASE_DIR, 'reports')
 
     MODELS_DIR = os.path.join(BASE_DIR, 'savemodel')
     OUTPUT_DIR = os.path.join(BASE_DIR, 'output')
@@ -96,13 +97,15 @@ class Config:
 
     LEGACY_CASE_DIR = CASE_DIR
     # 软件信息
-    SOFTWARE_NAME = '基于有向符号图与LLM的药物数据分析系统'
+    SOFTWARE_NAME = '药研智析 DrugReasoner'
+    SOFTWARE_SUBTITLE = '融合语言理解与符号关系推理的药物数据分析系统'
+    PROJECT_FOLDER_NAME = 'DrugReasoner'
     
     # 模型配置
     DEFAULT_MODEL_VERSION = "LLMDTA_v1"
     
     # GUI配置
-    MAIN_WINDOW_SIZE = '700x500'
+    MAIN_WINDOW_SIZE = '860x620'
     START_WINDOW_SIZE = '993x663'
     
     # MySQL路径（用于导入SQL）
@@ -157,6 +160,7 @@ for dir_path in [
     Config.EXPORTS_CSV_DIR,
     Config.EXPORTS_JSON_DIR,
     Config.EXPORTS_LOGS_DIR,
+    Config.REPORTS_DIR,
     Config.OUTPUT_DIR,
 ]:
     os.makedirs(dir_path, exist_ok=True)

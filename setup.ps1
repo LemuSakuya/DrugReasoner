@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    DeepBindDTA 一键环境配置与启动
+    药研智析 DrugReasoner 一键环境配置与启动
 
 .DESCRIPTION
     自动完成：
@@ -69,7 +69,7 @@ function Write-Err([string]$msg) { Write-Host "   !!  $msg" -ForegroundColor Red
 # ── 横幅 ────────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  ========================================" -ForegroundColor Magenta
-Write-Host "   DeepBindDTA  一键环境配置" -ForegroundColor Magenta
+Write-Host "   药研智析 DrugReasoner  一键环境配置" -ForegroundColor Magenta
 Write-Host "  ========================================" -ForegroundColor Magenta
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -321,7 +321,7 @@ if ($doConfig) {
         if (-not $model) { $model = 'deepseek-v4-pro' }
 
         @"
-# DeepBindDTA LLM 配置 (DeepSeek / OpenAI-compatible API)
+# DrugReasoner LLM 配置 (DeepSeek / OpenAI-compatible API)
 LLM_API_KEY=$key
 DEEPSEEK_API_KEY=$key
 LLM_BASE_URL=$base
@@ -342,7 +342,7 @@ LLM_REASONING_EFFORT=
         if ($prov) {
             $providerPrefix = ($prov -split ':')[0].ToUpper()
             @"
-# DeepBindDTA LLM 配置 (LangChain Provider)
+# DrugReasoner LLM 配置 (LangChain Provider)
 LLM_PROVIDER_MODEL=$prov
 ${providerPrefix}_API_KEY=$pkey
 "@ | Out-File -FilePath $envFile -Encoding utf8
